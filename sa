@@ -1,0 +1,43 @@
+#!bin/sh
+
+## Scan your Linux with common software with one command
+## With this script, you can scan the entire system using one command and using clamAV, RKHunter, chkrootkit, Maldet, tiger, Lynis tools.
+
+## This system will be developed in the first version for openSUSE and other distributions will be added little by little.
+
+# check Installations
+
+# check clamAV
+
+chclam=`which clamscan`
+if [ "$chclam" == "/usr/bin/clamscan" ];then
+	true
+else
+	echo "clamAV Not installed [ ERROR ]"
+	printf "Do You Want to Install clamAV ? (y/n)"
+	read clamresponse
+
+	if [ "$clamresponse" == "y" ] || [ "$clamresponse" == "Y" ];then
+		sudo zypper -n install clamav
+	else
+		exit 1
+	fi
+fi
+
+
+# check rkhunter
+
+chrkhunter=`whereis rkhunter | cut -d" " -f2`
+if [ "$chrkhunter" == "/usr/bin/rkhunter" ];then
+	true
+else
+	echo "rkhunter Not installed [ ERROR ]"
+	printf "Do You Want to Install rkhunter ? (y/n)"
+	read resrkhunter
+	if [ "$resrkhunter" == "y" ] || [ "$resrkhunter" == "Y" ];then
+		sudo zypper -n install rkhunter
+	else
+		exit 1
+	fi
+fi
+
