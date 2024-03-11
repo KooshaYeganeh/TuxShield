@@ -1,5 +1,6 @@
 # sa
-can your Linux with Common Security Tools with one Command on openSUSE
+
+Scan with Common Security Tools with one Command on **openSUSE**
 
 ![SUSE](https://en.opensuse.org/images/f/f2/Button-laptop-colour.png)
 
