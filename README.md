@@ -15,7 +15,7 @@ Scan with Common Security Tools with one Command on **openSUSE**
 ## Install
 
 ```
-cd /tmp && wget https://github.com/KooshaYeganeh/sa/archive/refs/heads/main.zip && unzip main.zip && [ -d "/opt/script" ] && echo "Directory exists" || sudo mkdir /opt/script && cd sa-main && sudo mv sa /opt/script && echo "sa Installed [ OK ]"
+cd /tmp && wget https://github.com/KooshaYeganeh/sa/archive/refs/heads/main.zip && unzip main.zip && [ -d "/opt/script" ] && echo "Directory exists" || sudo mkdir /opt/script && cd sa-main && sudo mv sa /opt/script && echo "sa Installed [ OK ]" && echo "Note : sa Tool is currently in /opt/script Directory"
 ```
 
 Note : If you run the script for the first time, it will check whether the software is installed on your system or not. If the software is not installed, it will automatically install the software on your system.
