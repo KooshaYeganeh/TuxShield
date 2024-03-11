@@ -6,11 +6,11 @@ Scan with Common Security Tools with one Command on **openSUSE**
 
 ## Tools
 
-1- clamAV
-2- RKHunter
-3- LMD : Linux Malware Detect
-4- chkrootkit
-5- Lynis
+1 - **clamAV**  
+2 - **RKHunter**  
+3 - **LMD : Linux Malware Detect**  
+4 - **chkrootkit**  
+5 - **Lynis**
 
 ## Install
 
