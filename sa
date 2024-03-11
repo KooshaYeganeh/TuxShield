@@ -1,4 +1,4 @@
-#!bin/sh
+#!/bin/sh
 
 ## Scan your Linux with common software with one command
 ## With this script, you can scan the entire system using one command and using clamAV, RKHunter, chkrootkit, Maldet, tiger, Lynis tools.
@@ -19,6 +19,7 @@ else
 
 	if [ "$clamresponse" == "y" ] || [ "$clamresponse" == "Y" ];then
 		sudo zypper -n install clamav
+		sudo freshclam
 	else
 		exit 1
 	fi
@@ -40,4 +41,128 @@ else
 		exit 1
 	fi
 fi
+
+
+# check Maldet
+
+chmaldet=`whereis maldet | cut -d" " -f2`
+
+if [ "$chmaldet" == "/usr/local/sbin/maldet" ];then
+	true
+else
+	echo "Maldet Not installed [ ERROR ]"
+	printf "Do You Want to Install Maldet ? (y/n)"
+	read maldetres
+	if [ "$maldetres" == "y" ] || [ "$maldetres" == "Y" ];then
+		sudo zypper -n install wget
+		cd /tmp/
+		wget http://www.rfxn.com/downloads/maldetect-current.tar.gz
+		tar xfz maldetect-current.tar.gz
+		cd maldetect-1.6.*
+		sudo ./install.sh
+		cd
+
+		sudo /usr/local/sbin/maldet --mkpubpaths
+		/usr/local/sbin/maldet -u
+		
+		/usr/local/sbin/maldet -a
+
+
+	else
+		exit 1
+	fi
+	
+fi
+
+
+
+chrootkit=`whereis chkrootkit | cut -d" " -f2`
+
+if [ "$chrootkit" == "/usr/sbin/chkrootkit" ];then
+	true
+else	
+	
+	echo "chkrootkit Not installed [ ERROR ]"
+	printf "Do You Want to Install chkrootkit ? (y/n)"
+	read chkres
+	if [ "$chkres" == "y" ] || [ "$chkres" == "Y" ];then
+		sudo zypper addrepo https://download.opensuse.org/repositories/security/15.5/security.repo
+		sudo zypper refresh
+		sudo zypper -n install chkrootkit
+
+	else
+		exit 1
+	fi
+	
+fi
+
+
+
+chlynis=`whereis lynis | cut -d" " -f2`
+
+if [ "$chlynis" == "/usr/bin/lynis" ];then
+	true
+else	
+	
+	echo "Lynis Not installed [ ERROR ]"
+	printf "Do You Want to Install Lynis ? (y/n)"
+	read lynisre
+	if [ "$lynisres" == "y" ] || [ "$lynisres" == "Y" ];then
+		sudo zypper -n install lynis
+
+	else
+		exit 1
+	fi
+	
+fi
+
+
+
+
+scan_all(){
+
+
+
+	sudo clamscan --remove --infected --recursive /
+	sudo maldet -a /
+	sudo rkhunter --check --skip-keypress
+	sudo chkrootlit
+	sudo lynis audit system
+
+
+}
+
+
+update(){
+
+	sudo freshclam
+	sudo rkhunter --update
+	sudo maldet -u
+
+
+}
+
+
+if [ "$0" == "./sa" ];then
+	scan_all
+elif [ "$0" == "./sa" ];then
+	if [ "$1" == "--all" ];then
+		scan_all
+	else
+		echo "ERROR on --all switch or lcommand Execution"
+	fi
+elif [ "$0" == "./sa" ];then
+	if [ "$1" == "-u" ] || [ "$1" == "--update" ];then
+		update
+		sleep 
+		echo "all Packages Updated [ OK ]"
+	else
+		echo "can Not Update Packages [ ERROR ]"
+		exit 1
+	fi
+
+else
+	echo "ERROR on command Execution"
+fi
+
 
