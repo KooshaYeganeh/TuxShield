@@ -147,7 +147,7 @@ if [ "$0" == "./sa" ];then
 		scan_all
 	elif [ "$1" == "-u" ] || [ "$1" == "--update" ];then
 		update
-		sleep 
+		sleep 2
 		echo "All Packages Updated [ OK ]"
 	elif [ "$1" == "-h" ] || [ "$1" == "--help" ];then
 		echo "> ./sa or ./sa --all : Scan with All Tools"
