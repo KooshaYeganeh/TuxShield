@@ -32,7 +32,7 @@ chrkhunter=`whereis rkhunter | cut -d" " -f2`
 if [ "$chrkhunter" == "/usr/bin/rkhunter" ];then
 	true
 else
-	echo "rkhunter Not installed [ ERROR ]"
+	echo "Rkhunter Not installed [ ERROR ]"
 	printf "Do You Want to Install rkhunter ? (y/n)"
 	read resrkhunter
 	if [ "$resrkhunter" == "y" ] || [ "$resrkhunter" == "Y" ];then
@@ -63,9 +63,8 @@ else
 		cd
 
 		sudo /usr/local/sbin/maldet --mkpubpaths
-		/usr/local/sbin/maldet -u
-		
-		/usr/local/sbin/maldet -a
+		sudo /usr/local/sbin/maldet -u
+		sudo /usr/local/sbin/maldet -a
 
 
 	else
@@ -124,7 +123,7 @@ scan_all(){
 
 
 	sudo clamscan --remove --infected --recursive /
-	sudo maldet -a /
+	sudo /usr/local/sbin/maldet -a /
 	sudo rkhunter --check --skip-keypress
 	sudo chkrootlit
 	sudo lynis audit system
@@ -139,8 +138,9 @@ update(){
 	sudo rkhunter --update
 	sudo /usr/local/sbin/maldet -u
 
-
 }
+
+
 
 if [ "$1" == "--all" ] || [ "$1" == "-a" ];then
 	scan_all
