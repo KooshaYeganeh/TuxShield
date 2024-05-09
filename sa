@@ -106,7 +106,7 @@ else
 	echo "Lynis Not installed [ ERROR ]"
 	printf "Do You Want to Install Lynis ? (y/n)"
 	read lynisre
-	if [ "$lynisres" == "y" ] || [ "$lynisres" == "Y" ];then
+	if [ "$lynisre" == "y" ] || [ "$lynisre" == "Y" ];then
 		sudo zypper -n install lynis
 
 	else
