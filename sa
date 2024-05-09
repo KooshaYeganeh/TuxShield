@@ -149,9 +149,9 @@ elif [ "$1" == "-u" ] || [ "$1" == "--update" ];then
 	sleep 2
 	echo "All Packages Updated [ OK ]"
 elif [ "$1" == "-h" ] || [ "$1" == "--help" ];then
-	echo "> ./sa or ./sa --all : Scan with All Tools"
-	echo "> ./sa -u or ./sa --update : Updates All Tools"
-	echo "> ./sa -h or --help : Help Page "
+	echo "> sa or ./sa --all : Scan with All Tools"
+	echo "> sa -u or ./sa --update : Updates All Tools"
+	echo "> sa -h or --help : Help Page "
 else
 	echo "Command Execution ERROR"
 	exit 1
