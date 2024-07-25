@@ -1,0 +1,85 @@
+---
+- name: Ensure ClamAV, RKHunter, Maldet, chkrootkit, and Lynis are installed and run scans
+  hosts: linux_servers
+  become: yes
+  tasks:
+    - name: Ensure ClamAV is installed
+      package:
+        name: clamav
+        state: present
+
+    - name: Update ClamAV definitions
+      command: freshclam
+      when: ansible_facts.packages.clamav is defined
+
+    - name: Run ClamAV scan
+      shell: clamscan --remove --infected --recursive /
+      register: clamscan_result
+      ignore_errors: yes
+
+    - name: Display ClamAV scan result
+      debug:
+        var: clamscan_result.stdout
+
+    - name: Ensure RKHunter is installed
+      package:
+        name: rkhunter
+        state: present
+
+    - name: Run RKHunter scan
+      shell: rkhunter --check --skip-keypress
+      register: rkhunter_result
+      ignore_errors: yes
+
+    - name: Display RKHunter scan result
+      debug:
+        var: rkhunter_result.stdout
+
+    - name: Ensure Maldet is installed
+      shell: |
+        wget http://www.rfxn.com/downloads/maldetect-current.tar.gz -O /tmp/maldetect-current.tar.gz
+        tar xfz /tmp/maldetect-current.tar.gz -C /tmp/
+        cd /tmp/maldetect-*
+        ./install.sh
+        /usr/local/sbin/maldet --mkpubpaths
+        /usr/local/sbin/maldet -u
+      args:
+        creates: /usr/local/sbin/maldet
+
+    - name: Run Maldet scan
+      shell: /usr/local/sbin/maldet -a /
+      register: maldet_result
+      ignore_errors: yes
+
+    - name: Display Maldet scan result
+      debug:
+        var: maldet_result.stdout
+
+    - name: Ensure chkrootkit is installed
+      package:
+        name: chkrootkit
+        state: present
+
+    - name: Run chkrootkit scan
+      shell: chkrootkit
+      register: chkrootkit_result
+      ignore_errors: yes
+
+    - name: Display chkrootkit scan result
+      debug:
+        var: chkrootkit_result.stdout
+
+    - name: Ensure Lynis is installed
+      package:
+        name: lynis
+        state: present
+
+    - name: Run Lynis scan
+      shell: lynis audit system
+      register: lynis_result
+      ignore_errors: yes
+
+    - name: Display Lynis scan result
+      debug:
+        var: lynis_result.stdout
+

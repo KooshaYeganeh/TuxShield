@@ -132,6 +132,16 @@ scan_all(){
 }
 
 
+scan_hosts(){
+
+	#$1=hosts.ini 
+	#$2=scan.yml 	
+	ansible-playbook -i $1 $2
+
+
+}
+
+
 update(){
 
 	sudo freshclam
@@ -148,10 +158,13 @@ elif [ "$1" == "-u" ] || [ "$1" == "--update" ];then
 	update
 	sleep 2
 	echo "All Packages Updated [ OK ]"
+elif [ "$1" == "-AH" ] || [ "$1" == "--hosts" ];then
+	scan_hosts hosts.ini scan.yml
 elif [ "$1" == "-h" ] || [ "$1" == "--help" ];then
-	echo "> sa or ./sa --all : Scan with All Tools"
-	echo "> sa -u or ./sa --update : Updates All Tools"
-	echo "> sa -h or --help : Help Page "
+	echo "> sa or sa --all : Scan with All Tools"
+	echo "> sa -U or sa --update : Updates All Tools"
+	echo "> sa -AH or sa --hosts : scan All Hosts in hosts.ini File"
+	echo "> sa -h or sa --help : Help Page "
 else
 	echo "Command Execution ERROR"
 	exit 1
