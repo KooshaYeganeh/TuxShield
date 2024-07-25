@@ -20,6 +20,11 @@ cd /tmp && wget https://github.com/KooshaYeganeh/sa/archive/refs/heads/main.zip 
 
 Note : If you run the script for the first time, it will check whether the software is installed on your system or not. If the software is not installed, it will automatically install the software on your system.
 
+Note : If you don't want to scan all devices with Ansible, you can install the RAM file on your system.
+
+```
+sudo rpm -ivh sa-1.0.0.noarch.rpm
+```
 
 
 ## Use
@@ -36,6 +41,13 @@ Update Tools :
 ```
 ./sa -u or ./sa --update
 ```
+
+Scan All Hosts:
+
+```
+./sa --hosts
+```
+
 
 Help :
 
