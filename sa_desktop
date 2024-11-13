@@ -1,0 +1,111 @@
+#!/bin/bash
+
+## GUI-based System Scanner with Enhanced Zenity Interface for openSUSE
+
+# Path to ClamAV icon
+CLAMAV_ICON="/usr/share/icons/clamav.png"  # Replace with your actual icon path
+
+# Prompt for sudo password
+PASSWORD=$(zenity --password --height=200 --width=400 --title="Root Password Required" --text="Please enter your root password for sudo access:")
+
+# Exit if no password is entered
+if [ -z "$PASSWORD" ]; then
+  zenity --error --title="Error" --text="Root password is required to proceed. Exiting."
+  exit 1
+fi
+
+# Helper function to run sudo commands with the provided password
+run_sudo() {
+  echo "$PASSWORD" | sudo -S "$@"
+}
+
+## Check for each tool and ask for installation if missing
+check_installation() {
+  local tool=$1
+  local command_path=$2
+  local install_command=$3
+  local setup_command=$4
+
+  if ! [ -x "$(command -v $command_path)" ]; then
+    zenity --warning --title="Tool Missing" --text="$tool is not installed!" --height=400 --width=800
+    if zenity --question --title="Install $tool?" --text="Would you like to install $tool?" --height=400 --width=800; then
+      run_sudo bash -c "$install_command"
+      run_sudo bash -c "$setup_command"
+    else
+      zenity --error --title="Installation Skipped" --text="$tool installation was skipped. Exiting." --height=400 --width=800
+      exit 1
+    fi
+  fi
+}
+
+# Check installations
+check_installation "clamAV" "/usr/bin/clamscan" "zypper -n install clamav" "freshclam"
+check_installation "RKHunter" "sudo /usr/bin/rkhunter" "zypper -n install rkhunter" ""
+check_installation "Maldet" "/usr/local/sbin/maldet" "zypper -n install wget; cd /tmp; wget http://www.rfxn.com/downloads/maldetect-current.tar.gz; tar xfz maldetect-current.tar.gz; cd maldetect-*; ./install.sh; cd" "/usr/local/sbin/maldet --mkpubpaths; /usr/local/sbin/maldet -u"
+check_installation "chkrootkit" "/usr/sbin/chkrootkit" "zypper addrepo https://download.opensuse.org/repositories/security/15.5/security.repo; zypper refresh; zypper -n install chkrootkit" ""
+check_installation "Lynis" "lynis" "zypper -n install lynis" ""
+
+## Define scan functions
+scan_all() {
+  zenity --info --title="System Scan" --text="Starting a full system scan. This may take some time." --height=400 --width=800
+  run_sudo clamscan --remove --infected --recursive / | zenity --progress --title="Scanning with ClamAV..." --pulsate --auto-close --height=400 --width=800
+  run_sudo /usr/local/sbin/maldet -a / | zenity --progress --title="Scanning with Maldet..." --pulsate --auto-close --height=400 --width=800
+  run_sudo rkhunter --check --skip-keypress | zenity --progress --title="Scanning with RKHunter..." --pulsate --auto-close --height=400 --width=800
+  run_sudo chkrootkit | zenity --progress --title="Scanning with chkrootkit..." --pulsate --auto-close --height=400 --width=800
+  run_sudo lynis audit system | zenity --progress --title="Auditing with Lynis..." --pulsate --auto-close --height=400 --width=800
+  zenity --info --title="Scan Complete" --text="System scan completed successfully!" --height=400 --width=800
+}
+
+scan_hosts() {
+  local hosts_file="hosts.ini"
+  local playbook_file="scan.yml"
+  
+  if [ -f "$hosts_file" ] && [ -f "$playbook_file" ]; then
+    run_sudo ansible-playbook -i "$hosts_file" "$playbook_file" | zenity --progress --title="Scanning Remote Hosts" --text="Scanning hosts in $hosts_file..." --pulsate --auto-close --height=400 --width=800
+  else
+    zenity --error --title="File Missing" --text="Missing hosts.ini or scan.yml file." --height=400 --width=800
+  fi
+}
+
+update_all() {
+  zenity --info --title="Updating Tools" --text="Starting tool updates..." --height=400 --width=800
+  run_sudo freshclam | zenity --progress --title="Updating ClamAV..." --pulsate --auto-close --height=400 --width=800
+  run_sudo rkhunter --update | zenity --progress --title="Updating RKHunter..." --pulsate --auto-close --height=400 --width=800
+  run_sudo /usr/local/sbin/maldet -u | zenity --progress --title="Updating Maldet..." --pulsate --auto-close --height=400 --width=800
+  zenity --info --title="Update Complete" --text="All tools updated successfully." --height=400 --width=800
+}
+
+## Main Menu with Notification for ClamAV
+zenity --notification --text="ClamAV is available for scan" --icon-name="clamav" --height=400 --width=800  # Uses system's ClamAV icon
+
+action=$(zenity --list --title="Enhanced System Scanner" \
+  --text="Choose an action to perform:" \
+  --column="Action" --column="Description" \
+  --height=400 --width=800 \
+  "Scan All" "Perform a full system scan with all tools" \
+  "Update" "Update all installed tools" \
+  "Scan Hosts" "Scan remote hosts listed in hosts.ini" \
+  "Help" "View help information" \
+  "Exit" "Exit the application")
+
+case $action in
+  "Scan All")
+    scan_all
+    ;;
+  "Update")
+    update_all
+    ;;
+  "Scan Hosts")
+    scan_hosts
+    ;;
+  "Help")
+    zenity --info --title="Help Information" --text="This System Scanner offers the following features:\n\n- **Scan All**: Runs a full scan of your system using ClamAV, Maldet, RKHunter, chkrootkit, and Lynis.\n- **Update**: Ensures all tools are up to date.\n- **Scan Hosts**: Scans remote hosts using Ansible with hosts.ini and scan.yml files.\n\nNote: The application requires root access for many operations. Please provide your password when prompted." --height=400 --width=800
+    ;;
+  "Exit")
+    zenity --info --title="Exiting" --text="Thank you for using the System Scanner." --height=400 --width=800
+    exit 0
+    ;;
+  *)
+    zenity --error --title="Invalid Option" --text="No valid option selected. Exiting." --height=400 --width=800
+    ;;
+esac
