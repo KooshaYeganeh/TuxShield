@@ -1,174 +1,164 @@
-#!/bin/sh
+#!/usr/bin/env bash
+#
+# sa.sh — Cross‑distro security scanner installer/runner
+# Supports: Debian/Ubuntu, Fedora/RHEL/Rocky, openSUSE
+#
 
-## Scan your Linux with common software with one command
-## With this script, you can scan the entire system using one command and using clamAV, RKHunter, chkrootkit, Maldet, tiger, Lynis tools.
-
-## This system will be developed in the first version for openSUSE and other distributions will be added little by little.
-
-# check Installations
-
-# check clamAV
-
-chclam=`which clamscan`
-if [ "$chclam" == "/usr/bin/clamscan" ];then
-	true
-else
-	echo "clamAV Not installed [ ERROR ]"
-	printf "Do You Want to Install clamAV ? (y/n)"
-	read clamresponse
-
-	if [ "$clamresponse" == "y" ] || [ "$clamresponse" == "Y" ];then
-		sudo zypper -n install clamav
-		sudo freshclam
-	else
-		exit 1
-	fi
-fi
-
-
-# check rkhunter
-
-chrkhunter=`whereis rkhunter | cut -d" " -f2`
-if [ "$chrkhunter" == "/usr/bin/rkhunter" ];then
-	true
-else
-	echo "Rkhunter Not installed [ ERROR ]"
-	printf "Do You Want to Install rkhunter ? (y/n)"
-	read resrkhunter
-	if [ "$resrkhunter" == "y" ] || [ "$resrkhunter" == "Y" ];then
-		sudo zypper -n install rkhunter
-	else
-		exit 1
-	fi
-fi
-
-
-# check Maldet
-
-chmaldet=`whereis maldet | cut -d" " -f2`
-
-if [ "$chmaldet" == "/usr/local/sbin/maldet" ];then
-	true
-else
-	echo "Maldet Not installed [ ERROR ]"
-	printf "Do You Want to Install Maldet ? (y/n)"
-	read maldetres
-	if [ "$maldetres" == "y" ] || [ "$maldetres" == "Y" ];then
-		sudo zypper -n install wget
-		cd /tmp/
-		wget http://www.rfxn.com/downloads/maldetect-current.tar.gz
-		tar xfz maldetect-current.tar.gz
-		cd maldetect-1.6.*
-		sudo ./install.sh
-		cd
-
-		sudo /usr/local/sbin/maldet --mkpubpaths
-		sudo /usr/local/sbin/maldet -u
-		sudo /usr/local/sbin/maldet -a
-
-
-	else
-		exit 1
-	fi
-	
-fi
-
-
-
-chrootkit=`whereis chkrootkit | cut -d" " -f2`
-
-if [ "$chrootkit" == "/usr/sbin/chkrootkit" ];then
-	true
-else	
-	
-	echo "chkrootkit Not installed [ ERROR ]"
-	printf "Do You Want to Install chkrootkit ? (y/n)"
-	read chkres
-	if [ "$chkres" == "y" ] || [ "$chkres" == "Y" ];then
-		sudo zypper addrepo https://download.opensuse.org/repositories/security/15.5/security.repo
-		sudo zypper refresh
-		sudo zypper -n install chkrootkit
-
-	else
-		exit 1
-	fi
-	
-fi
-
-
-
-chlynis=`whereis lynis | cut -d" " -f2`
-
-if [ "$chlynis" == "/usr/bin/lynis" ];then
-	true
-else	
-	
-	echo "Lynis Not installed [ ERROR ]"
-	printf "Do You Want to Install Lynis ? (y/n)"
-	read lynisre
-	if [ "$lynisre" == "y" ] || [ "$lynisre" == "Y" ];then
-		sudo zypper -n install lynis
-
-	else
-		exit 1
-	fi
-	
-fi
-
-
-
-
-scan_all(){
-
-
-
-	sudo clamscan --remove --infected --recursive /
-	sudo /usr/local/sbin/maldet -a /
-	sudo rkhunter --check --skip-keypress
-	sudo chkrootlit
-	sudo lynis audit system
-
-
+# Detect package manager
+detect_pkg_mgr() {
+    if command -v apt >/dev/null 2>&1; then
+        PKG="apt"
+    elif command -v dnf >/dev/null 2>&1; then
+        PKG="dnf"
+    elif command -v yum >/dev/null 2>&1; then
+        PKG="yum"
+    elif command -v zypper >/dev/null 2>&1; then
+        PKG="zypper"
+    else
+        echo "Unsupported distro or package manager not found."
+        exit 1
+    fi
 }
 
-
-scan_hosts(){
-
-	#$1=hosts.ini 
-	#$2=scan.yml 	
-	ansible-playbook -i $1 $2
-
-
+# Install a package using the detected pkg manager
+install_pkg() {
+    local pkg="$1"
+    case "$PKG" in
+        apt)
+            sudo apt update -y
+            sudo apt install -y "$pkg"
+            ;;
+        dnf)
+            sudo dnf install -y "$pkg"
+            ;;
+        yum)
+            sudo yum install -y "$pkg"
+            ;;
+        zypper)
+            sudo zypper -n install "$pkg"
+            ;;
+    esac
 }
 
-
-update(){
-
-	sudo freshclam
-	sudo rkhunter --update
-	sudo /usr/local/sbin/maldet -u
-
+# Check if installed
+is_installed() {
+    command -v "$1" >/dev/null 2>&1
 }
 
+# Install and configure each scanner
+ensure_clamav() {
+    if ! is_installed clamscan; then
+        echo "Installing ClamAV..."
+        install_pkg clamav
+        if ! is_installed freshclam; then
+            install_pkg clamav-daemon
+        fi
+        sudo freshclam
+    fi
+}
 
+ensure_rkhunter() {
+    if ! is_installed rkhunter; then
+        echo "Installing rkhunter..."
+        install_pkg rkhunter
+    fi
+}
 
-if [ "$1" == "--all" ] || [ "$1" == "-a" ];then
-	scan_all
-elif [ "$1" == "-u" ] || [ "$1" == "--update" ];then
-	update
-	sleep 2
-	echo "All Packages Updated [ OK ]"
-elif [ "$1" == "-AH" ] || [ "$1" == "--hosts" ];then
-	scan_hosts hosts.ini scan.yml
-elif [ "$1" == "-h" ] || [ "$1" == "--help" ];then
-	echo "> sa or sa --all : Scan with All Tools"
-	echo "> sa -U or sa --update : Updates All Tools"
-	echo "> sa -AH or sa --hosts : scan All Hosts in hosts.ini File"
-	echo "> sa -h or sa --help : Help Page "
-else
-	echo "Command Execution ERROR"
-	exit 1
-fi
+ensure_chkrootkit() {
+    if ! is_installed chkrootkit; then
+        echo "Installing chkrootkit..."
+        install_pkg chkrootkit
+    fi
+}
 
+ensure_maldet() {
+    if ! is_installed maldet; then
+        echo "Installing maldet..."
+        install_pkg wget
+        cd /tmp || return
+        wget -q http://www.rfxn.com/downloads/maldetect-current.tar.gz
+        tar xzf maldetect-current.tar.gz
+        cd maldetect-*
+        sudo ./install.sh
+        # initialize
+        sudo /usr/local/sbin/maldet --mkpubpaths
+        sudo /usr/local/sbin/maldet -u
+    fi
+}
 
+ensure_lynis() {
+    if ! is_installed lynis; then
+        echo "Installing Lynis..."
+        install_pkg lynis
+    fi
+}
+
+ensure_tripwire() {
+    if ! is_installed tripwire; then
+        echo "Installing Tripwire..."
+        install_pkg tripwire
+        # Note: Tripwire requires policy initialization after installation
+        echo "Tripwire installed. Configure policies manually."
+    fi
+}
+
+ensure_unhide() {
+    if ! is_installed unhide; then
+        echo "Installing Unhide..."
+        install_pkg unhide
+    fi
+}
+
+# Run all scanners
+scan_all() {
+    echo "Running full scan..."
+    sudo clamscan --infected --recursive /
+    sudo /usr/local/sbin/maldet -a /
+    sudo rkhunter --update
+    sudo rkhunter --check --skip-keypress
+    sudo chkrootkit
+    sudo lynis audit system
+    sudo tripwire --check
+    sudo unhide quick
+}
+
+# Update tools (signatures etc.)
+update_tools() {
+    echo "Updating scanner databases..."
+    sudo freshclam
+    sudo /usr/local/sbin/maldet -u
+    sudo rkhunter --update
+    echo "Updates completed."
+}
+
+# Main
+detect_pkg_mgr
+
+case "$1" in
+    -a|--all)
+        ensure_clamav
+        ensure_rkhunter
+        ensure_chkrootkit
+        ensure_maldet
+        ensure_lynis
+        ensure_tripwire
+        ensure_unhide
+        scan_all
+        ;;
+    -u|--update)
+        update_tools
+        ;;
+    -h|--help)
+        cat <<EOF
+Usage: tuxshield [option]
+-a  | --all      Install & run all tools
+-u  | --update   Update signatures & definitions
+-h  | --help     Show this help
+EOF
+        ;;
+    *)
+        echo "Invalid option. See --help."
+        exit 1
+        ;;
+esac
 
