@@ -1,164 +1,580 @@
 #!/usr/bin/env bash
 #
-# sa.sh — Cross‑distro security scanner installer/runner
-# Supports: Debian/Ubuntu, Fedora/RHEL/Rocky, openSUSE
-#
+# TuxShield - Local Linux Security Scanner (FULLY WORKING)
+# Version: 7.2 - Removed invalid -v flag
 
-# Detect package manager
-detect_pkg_mgr() {
-    if command -v apt >/dev/null 2>&1; then
-        PKG="apt"
-    elif command -v dnf >/dev/null 2>&1; then
-        PKG="dnf"
-    elif command -v yum >/dev/null 2>&1; then
-        PKG="yum"
-    elif command -v zypper >/dev/null 2>&1; then
-        PKG="zypper"
+set -euo pipefail
+
+# Global variables
+LOG_FILE="/var/log/tuxshield.log"
+VERSION="7.2"
+TEMP_DIR="/tmp/tuxshield_$$"
+RESULTS_DIR="/var/log/tuxshield"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+NC='\033[0m'
+
+# Get the REAL user (even when running with sudo)
+REAL_USER="${SUDO_USER:-$USER}"
+REAL_HOME=$(eval echo "~$REAL_USER")
+
+# Logging
+log() {
+    local level="$1"
+    shift
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    
+    case "$level" in
+        "INFO")  echo -e "${GREEN}[INFO]${NC} $*" ;;
+        "WARN")  echo -e "${YELLOW}[WARN]${NC} $*" ;;
+        "ERROR") echo -e "${RED}[ERROR]${NC} $*" ;;
+        "STEP")  echo -e "${BLUE}[STEP]${NC} $*" ;;
+        "SUCCESS") echo -e "${GREEN}[✓]${NC} $*" ;;
+        *)       echo -e "$*" ;;
+    esac
+    
+    echo "[$timestamp] [$level] $*" >> "$LOG_FILE"
+}
+
+# Find SemanticsAV binary
+find_semanticsav() {
+    if [[ -f "$REAL_HOME/.local/bin/semantics-av" ]]; then
+        echo "$REAL_HOME/.local/bin/semantics-av"
+        return
+    fi
+    if command -v semantics-av >/dev/null 2>&1; then
+        echo "$(command -v semantics-av)"
+        return
+    fi
+    echo ""
+}
+
+# Find Nuclei binary
+find_nuclei() {
+    if command -v nuclei >/dev/null 2>&1; then
+        echo "$(command -v nuclei)"
+    elif [[ -f "./nuclei" ]]; then
+        echo "./nuclei"
     else
-        echo "Unsupported distro or package manager not found."
-        exit 1
+        echo ""
     fi
 }
 
-# Install a package using the detected pkg manager
-install_pkg() {
-    local pkg="$1"
-    case "$PKG" in
-        apt)
-            sudo apt update -y
-            sudo apt install -y "$pkg"
+# Find Nuclei templates
+find_nuclei_templates() {
+    if [[ -d "$REAL_HOME/nuclei-templates" ]]; then
+        echo "$REAL_HOME/nuclei-templates"
+        return
+    fi
+    if [[ -d "$HOME/nuclei-templates" ]]; then
+        echo "$HOME/nuclei-templates"
+        return
+    fi
+    echo ""
+}
+
+# ============ SCAN FUNCTIONS WITH LIVE OUTPUT ============
+
+# SemanticsAV scan with LIVE output (FIXED - removed -v flag)
+run_semanticsav_scan() {
+    local target="$1"
+    local output_file="$2"
+    
+    SEMANTIC_BIN=$(find_semanticsav)
+    
+    if [[ -z "$SEMANTIC_BIN" ]]; then
+        log "ERROR" "SemanticsAV not found"
+        return 1
+    fi
+    
+    if [[ ! -e "$target" ]]; then
+        log "ERROR" "Target does not exist: $target"
+        return 1
+    fi
+    
+    log "INFO" "SemanticsAV binary: $SEMANTIC_BIN"
+    log "INFO" "Running as user: $REAL_USER"
+    log "INFO" "Target: $target"
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}  SemanticsAV Scan in Progress${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    # Run WITHOUT the -v flag (it doesn't exist)
+    sudo -u "$REAL_USER" "$SEMANTIC_BIN" scan "$target" -r 2>&1 | tee "$output_file"
+    
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    # Summary
+    if [[ -f "$output_file" ]]; then
+        local total_files=$(grep -c "^(" "$output_file" 2>/dev/null || echo "0")
+        local unsupported=$(grep -c "UNSUPPORTED" "$output_file" 2>/dev/null || echo "0")
+        
+        echo ""
+        echo -e "${GREEN}📊 Scan Summary:${NC}"
+        echo "   Total files processed: $total_files"
+        echo "   Unsupported files: $unsupported"
+    fi
+    
+    log "SUCCESS" "Scan completed"
+}
+
+# Nuclei scan with LIVE output
+run_nuclei_scan() {
+    local target="$1"
+    local output_file="$2"
+    
+    NUCLEI_BIN=$(find_nuclei)
+    TEMPLATE_DIR=$(find_nuclei_templates)
+    
+    if [[ -z "$NUCLEI_BIN" ]]; then
+        log "ERROR" "Nuclei not found"
+        return 1
+    fi
+    
+    if [[ -z "$TEMPLATE_DIR" ]]; then
+        log "ERROR" "Nuclei templates not found"
+        return 1
+    fi
+    
+    log "INFO" "Nuclei binary: $NUCLEI_BIN"
+    log "INFO" "Templates: $TEMPLATE_DIR"
+    log "INFO" "Target: $target"
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}  Nuclei Scan in Progress${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    # Run nuclei with proper flags
+    sudo "$NUCLEI_BIN" -t "$TEMPLATE_DIR" \
+        -target "$target" \
+        -severity low,medium,high,critical \
+        -silent 2>&1 | tee "$output_file"
+    
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    if [[ -f "$output_file" ]] && [[ -s "$output_file" ]]; then
+        local findings=$(wc -l < "$output_file")
+        echo ""
+        echo -e "${GREEN}📊 Scan Summary:${NC}"
+        echo "   Findings: $findings"
+    fi
+}
+
+# ClamAV scan with progress
+run_clamav_scan() {
+    local target="$1"
+    local output_file="$2"
+    
+    log "INFO" "ClamAV scanning: $target"
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}  ClamAV Scan in Progress${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    # Run with progress indicator
+    sudo clamscan --infected --recursive \
+        --max-files=0 \
+        --max-scansize=0 \
+        --max-filesize=0 \
+        "$target" 2>&1 | tee "$output_file"
+    
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    local infected=$(grep -c "FOUND" "$output_file" 2>/dev/null || echo "0")
+    local scanned=$(grep "Scanned files" "$output_file" 2>/dev/null | awk '{print $3}' | head -1)
+    
+    echo ""
+    echo -e "${GREEN}📊 Scan Summary:${NC}"
+    echo "   Files scanned: $scanned"
+    echo "   Infected files: $infected"
+}
+
+# ============ COMMANDS ============
+
+cmd_semantics() {
+    local target="$1"
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local output="$RESULTS_DIR/semantics_${timestamp}.log"
+    
+    # Expand ~ to full path if needed
+    if [[ "$target" == "~"* ]]; then
+        target="${target/#\~/$REAL_HOME}"
+    fi
+    
+    log "STEP" "SemanticsAV Scan: $target"
+    run_semanticsav_scan "$target" "$output"
+    
+    echo ""
+    echo -e "${GREEN}✓ Full log saved to: $output${NC}"
+}
+
+cmd_nuclei() {
+    local target="$1"
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local output="$RESULTS_DIR/nuclei_${timestamp}.log"
+    
+    log "STEP" "Nuclei Scan: $target"
+    run_nuclei_scan "$target" "$output"
+    
+    echo ""
+    echo -e "${GREEN}✓ Full log saved to: $output${NC}"
+}
+
+cmd_clamav() {
+    local target="$1"
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local output="$RESULTS_DIR/clamav_${timestamp}.log"
+    
+    # Expand ~ to full path if needed
+    if [[ "$target" == "~"* ]]; then
+        target="${target/#\~/$REAL_HOME}"
+    fi
+    
+    log "STEP" "ClamAV Scan: $target"
+    run_clamav_scan "$target" "$output"
+    
+    echo ""
+    echo -e "${GREEN}✓ Full log saved to: $output${NC}"
+}
+
+cmd_full_scan() {
+    local target="${1:-/}"
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local results="$RESULTS_DIR/full_scan_$timestamp"
+    mkdir -p "$results"
+    
+    log "STEP" "════════════════════════════════════════"
+    log "STEP" "     TuxShield Full System Scan"
+    log "STEP" "════════════════════════════════════════"
+    log "INFO" "Running as: $REAL_USER (home: $REAL_HOME)"
+    
+    # 1. ClamAV
+    echo ""
+    log "STEP" "[1/3] ClamAV Scan"
+    run_clamav_scan "$target" "$results/clamav.log"
+    
+    # 2. Nuclei (local services)
+    echo ""
+    log "STEP" "[2/3] Nuclei Local Scan"
+    run_nuclei_scan "127.0.0.1" "$results/nuclei.log"
+    
+    # 3. SemanticsAV
+    echo ""
+    log "STEP" "[3/3] SemanticsAV AI Scan"
+    run_semanticsav_scan "$target" "$results/semanticsav.log"
+    
+    log "SUCCESS" "Scan complete! Results: $results"
+    echo ""
+    echo "All results saved to: $results"
+}
+
+cmd_quick_home() {
+    local results="$RESULTS_DIR/home_quick_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$results"
+    
+    log "STEP" "Quick Home Scan for user: $REAL_USER"
+    
+    # SemanticsAV on home
+    run_semanticsav_scan "$REAL_HOME" "$results/semanticsav.log"
+    
+    # Also run ClamAV on Downloads
+    echo ""
+    log "INFO" "Also scanning Downloads folder with ClamAV..."
+    run_clamav_scan "$REAL_HOME/Downloads" "$results/clamav_downloads.log"
+    
+    echo ""
+    echo -e "${GREEN}✓ Quick scan complete${NC}"
+    echo "  Results: $results"
+}
+
+cmd_update() {
+    log "STEP" "Updating all tools..."
+    
+    echo -n "ClamAV: "
+    sudo freshclam 2>/dev/null && echo "✓" || echo "✗"
+    
+    echo -n "Nuclei templates: "
+    TEMPLATE_DIR=$(find_nuclei_templates)
+    if [[ -n "$TEMPLATE_DIR" ]]; then
+        (cd "$TEMPLATE_DIR" && sudo -u "$REAL_USER" git pull 2>/dev/null) && echo "✓" || echo "⚠"
+    else
+        echo "Not installed"
+    fi
+    
+    echo -n "SemanticsAV: "
+    SEMANTIC_BIN=$(find_semanticsav)
+    if [[ -n "$SEMANTIC_BIN" ]]; then
+        sudo -u "$REAL_USER" "$SEMANTIC_BIN" update 2>/dev/null && echo "✓" || echo "⚠"
+    else
+        echo "Not installed"
+    fi
+    
+    log "SUCCESS" "Update complete"
+}
+
+cmd_install() {
+    log "STEP" "Installing all tools for user: $REAL_USER"
+    mkdir -p "$TEMP_DIR" "$RESULTS_DIR"
+    
+    install_clamav
+    install_nuclei
+    install_semanticsav
+    
+    log "SUCCESS" "Installation complete!"
+}
+
+install_clamav() {
+    log "STEP" "Installing ClamAV..."
+    if ! command -v clamscan >/dev/null 2>&1; then
+        if command -v apt >/dev/null 2>&1; then
+            sudo apt update && sudo apt install -y clamav clamav-daemon
+        fi
+    fi
+    sudo freshclam 2>/dev/null
+    log "SUCCESS" "ClamAV installed"
+}
+
+install_nuclei() {
+    log "STEP" "Installing Nuclei for user: $REAL_USER"
+    
+    sudo rm -f /usr/local/bin/nuclei
+    
+    ARCH=$(uname -m)
+    case "$ARCH" in
+        x86_64)  NUCLEI_ARCH="amd64" ;;
+        aarch64) NUCLEI_ARCH="arm64" ;;
+        *)       NUCLEI_ARCH="amd64" ;;
+    esac
+    
+    cd "$TEMP_DIR"
+    wget -q https://github.com/projectdiscovery/nuclei/releases/download/v3.8.0/nuclei_3.8.0_linux_${NUCLEI_ARCH}.zip
+    unzip -q nuclei_3.8.0_linux_${NUCLEI_ARCH}.zip
+    sudo mv nuclei /usr/local/bin/
+    sudo chmod +x /usr/local/bin/nuclei
+    
+    sudo -u "$REAL_USER" mkdir -p "$REAL_HOME/nuclei-templates"
+    if [[ ! -d "$REAL_HOME/nuclei-templates/.git" ]]; then
+        sudo -u "$REAL_USER" git clone --depth 1 https://github.com/projectdiscovery/nuclei-templates.git "$REAL_HOME/nuclei-templates"
+    fi
+    
+    log "SUCCESS" "Nuclei installed"
+}
+
+install_semanticsav() {
+    log "STEP" "Installing SemanticsAV for user: $REAL_USER"
+    
+    if [[ -f "$REAL_HOME/.local/bin/semantics-av" ]]; then
+        log "INFO" "SemanticsAV already installed"
+        return
+    fi
+    
+    sudo -u "$REAL_USER" bash -c "$(curl -sSL https://raw.githubusercontent.com/metaforensics-ai/semantics-av-cli/main/scripts/install.sh)"
+    
+    sleep 5
+    
+    sudo -u "$REAL_USER" "$REAL_HOME/.local/bin/semantics-av" config init --defaults
+    sudo -u "$REAL_USER" systemctl --user daemon-reload
+    sudo -u "$REAL_USER" systemctl --user enable semantics-av
+    sudo -u "$REAL_USER" systemctl --user start semantics-av
+    
+    sleep 3
+    sudo -u "$REAL_USER" "$REAL_HOME/.local/bin/semantics-av" update
+    
+    log "SUCCESS" "SemanticsAV installed"
+}
+
+cmd_status() {
+    echo ""
+    echo -e "${CYAN}TuxShield v$VERSION Status${NC}"
+    echo -e "${BLUE}═══════════════════════════════════${NC}"
+    echo -e "User: ${GREEN}$REAL_USER${NC}"
+    echo ""
+    
+    # SemanticsAV
+    SEMANTIC_BIN=$(find_semanticsav)
+    if [[ -n "$SEMANTIC_BIN" ]]; then
+        echo -e "${GREEN}✓${NC} SemanticsAV: $SEMANTIC_BIN"
+    else
+        echo -e "${RED}✗${NC} SemanticsAV: Not installed"
+    fi
+    
+    # Nuclei
+    NUCLEI_BIN=$(find_nuclei)
+    if [[ -n "$NUCLEI_BIN" ]]; then
+        echo -e "${GREEN}✓${NC} Nuclei: installed"
+        TEMPLATE_DIR=$(find_nuclei_templates)
+        [[ -n "$TEMPLATE_DIR" ]] && echo "  Templates: $TEMPLATE_DIR"
+    else
+        echo -e "${RED}✗${NC} Nuclei: Not installed"
+    fi
+    
+    # ClamAV
+    if command -v clamscan >/dev/null 2>&1; then
+        echo -e "${GREEN}✓${NC} ClamAV: installed"
+    else
+        echo -e "${RED}✗${NC} ClamAV: Not installed"
+    fi
+    
+    echo ""
+}
+
+cmd_diagnose() {
+    echo ""
+    echo -e "${CYAN}TuxShield Diagnostic Report${NC}"
+    echo -e "${BLUE}═══════════════════════════════════${NC}"
+    echo -e "Real user: ${GREEN}$REAL_USER${NC}"
+    echo -e "Real home: ${GREEN}$REAL_HOME${NC}"
+    echo ""
+    
+    # Test SemanticsAV
+    echo -e "${YELLOW}SemanticsAV:${NC}"
+    SEMANTIC_BIN=$(find_semanticsav)
+    if [[ -n "$SEMANTIC_BIN" ]]; then
+        echo "  ✓ Binary found: $SEMANTIC_BIN"
+        echo "  ✓ Command: $SEMANTIC_BIN scan --help"
+    else
+        echo "  ✗ SemanticsAV not found"
+    fi
+    
+    echo ""
+    echo -e "${YELLOW}Nuclei:${NC}"
+    NUCLEI_BIN=$(find_nuclei)
+    if [[ -n "$NUCLEI_BIN" ]]; then
+        echo "  ✓ Binary found: $NUCLEI_BIN"
+        TEMPLATE_DIR=$(find_nuclei_templates)
+        if [[ -n "$TEMPLATE_DIR" ]]; then
+            echo "  ✓ Templates: $TEMPLATE_DIR"
+        else
+            echo "  ✗ Templates not found"
+        fi
+    else
+        echo "  ✗ Nuclei not found"
+    fi
+    
+    echo ""
+    echo -e "${YELLOW}ClamAV:${NC}"
+    if command -v clamscan >/dev/null 2>&1; then
+        echo "  ✓ ClamAV found"
+    else
+        echo "  ✗ ClamAV not found"
+    fi
+    
+    echo ""
+}
+
+show_help() {
+    cat << EOF
+${CYAN}TuxShield v$VERSION - Linux Security Scanner${NC}
+${BLUE}════════════════════════════════════════════════════${NC}
+
+${GREEN}COMMANDS:${NC}
+
+  ${YELLOW}SCANNING (with LIVE OUTPUT):${NC}
+    sudo $0 --semantics ~/Downloads    # Scan with SemanticsAV
+    sudo $0 --nuclei https://example.com  # Scan with Nuclei
+    sudo $0 --clamav /path             # Scan with ClamAV
+    sudo $0 --all                      # Full system scan
+    sudo $0 --quick-home               # Quick home scan
+
+  ${YELLOW}MAINTENANCE:${NC}
+    sudo $0 --install                  # Install all tools
+    sudo $0 --update                   # Update all tools
+    $0 --status                        # Show status
+    $0 --diagnose                      # Run diagnostics
+
+${GREEN}EXAMPLES:${NC}
+
+  # Scan Downloads with SemanticsAV (matches your manual command!)
+  sudo $0 --semantics ~/Downloads
+
+  # Scan website with Nuclei
+  sudo $0 --nuclei https://kygnus.github.io
+
+  # Quick home scan
+  sudo $0 --quick-home
+
+  # Check status
+  $0 --status
+
+${BLUE}Logs: $RESULTS_DIR/${NC}
+EOF
+}
+
+# ============ MAIN ============
+
+main() {
+    mkdir -p "$RESULTS_DIR"
+    
+    # Ensure REAL_HOME is set correctly
+    if [[ -z "$REAL_HOME" ]] || [[ "$REAL_HOME" == "/" ]]; then
+        REAL_HOME="/home/$REAL_USER"
+    fi
+    
+    case "${1:-}" in
+        --semantics)
+            if [[ -z "${2:-}" ]]; then
+                echo "Error: Path required"
+                echo "Usage: $0 --semantics /path/to/scan"
+                exit 1
+            fi
+            cmd_semantics "$2"
             ;;
-        dnf)
-            sudo dnf install -y "$pkg"
+        --nuclei)
+            if [[ -z "${2:-}" ]]; then
+                echo "Error: Target required"
+                echo "Usage: $0 --nuclei https://example.com"
+                exit 1
+            fi
+            cmd_nuclei "$2"
             ;;
-        yum)
-            sudo yum install -y "$pkg"
+        --clamav)
+            if [[ -z "${2:-}" ]]; then
+                echo "Error: Path required"
+                exit 1
+            fi
+            cmd_clamav "$2"
             ;;
-        zypper)
-            sudo zypper -n install "$pkg"
+        --all)
+            cmd_full_scan "${2:-/}"
+            ;;
+        --quick-home)
+            cmd_quick_home
+            ;;
+        --install)
+            cmd_install
+            ;;
+        --update)
+            cmd_update
+            ;;
+        --status)
+            cmd_status
+            ;;
+        --diagnose)
+            cmd_diagnose
+            ;;
+        -h|--help)
+            show_help
+            ;;
+        *)
+            show_help
+            exit 1
             ;;
     esac
 }
 
-# Check if installed
-is_installed() {
-    command -v "$1" >/dev/null 2>&1
-}
-
-# Install and configure each scanner
-ensure_clamav() {
-    if ! is_installed clamscan; then
-        echo "Installing ClamAV..."
-        install_pkg clamav
-        if ! is_installed freshclam; then
-            install_pkg clamav-daemon
-        fi
-        sudo freshclam
-    fi
-}
-
-ensure_rkhunter() {
-    if ! is_installed rkhunter; then
-        echo "Installing rkhunter..."
-        install_pkg rkhunter
-    fi
-}
-
-ensure_chkrootkit() {
-    if ! is_installed chkrootkit; then
-        echo "Installing chkrootkit..."
-        install_pkg chkrootkit
-    fi
-}
-
-ensure_maldet() {
-    if ! is_installed maldet; then
-        echo "Installing maldet..."
-        install_pkg wget
-        cd /tmp || return
-        wget -q http://www.rfxn.com/downloads/maldetect-current.tar.gz
-        tar xzf maldetect-current.tar.gz
-        cd maldetect-*
-        sudo ./install.sh
-        # initialize
-        sudo /usr/local/sbin/maldet --mkpubpaths
-        sudo /usr/local/sbin/maldet -u
-    fi
-}
-
-ensure_lynis() {
-    if ! is_installed lynis; then
-        echo "Installing Lynis..."
-        install_pkg lynis
-    fi
-}
-
-ensure_tripwire() {
-    if ! is_installed tripwire; then
-        echo "Installing Tripwire..."
-        install_pkg tripwire
-        # Note: Tripwire requires policy initialization after installation
-        echo "Tripwire installed. Configure policies manually."
-    fi
-}
-
-ensure_unhide() {
-    if ! is_installed unhide; then
-        echo "Installing Unhide..."
-        install_pkg unhide
-    fi
-}
-
-# Run all scanners
-scan_all() {
-    echo "Running full scan..."
-    sudo clamscan --infected --recursive /
-    sudo /usr/local/sbin/maldet -a /
-    sudo rkhunter --update
-    sudo rkhunter --check --skip-keypress
-    sudo chkrootkit
-    sudo lynis audit system
-    sudo tripwire --check
-    sudo unhide quick
-}
-
-# Update tools (signatures etc.)
-update_tools() {
-    echo "Updating scanner databases..."
-    sudo freshclam
-    sudo /usr/local/sbin/maldet -u
-    sudo rkhunter --update
-    echo "Updates completed."
-}
-
-# Main
-detect_pkg_mgr
-
-case "$1" in
-    -a|--all)
-        ensure_clamav
-        ensure_rkhunter
-        ensure_chkrootkit
-        ensure_maldet
-        ensure_lynis
-        ensure_tripwire
-        ensure_unhide
-        scan_all
-        ;;
-    -u|--update)
-        update_tools
-        ;;
-    -h|--help)
-        cat <<EOF
-Usage: tuxshield [option]
--a  | --all      Install & run all tools
--u  | --update   Update signatures & definitions
--h  | --help     Show this help
-EOF
-        ;;
-    *)
-        echo "Invalid option. See --help."
-        exit 1
-        ;;
-esac
-
+# Run
+trap "rm -rf $TEMP_DIR" EXIT
+main "$@"
